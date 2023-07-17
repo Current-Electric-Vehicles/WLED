@@ -28,6 +28,9 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
   private:
       bool enabled = true;
 
+      int8_t stripPins[2];
+
+
 
   public:
 
@@ -204,9 +207,9 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       // top["testULong"] = testULong;
       top["testFloat"] = 420.69;
       top["testString"] = "string goes here";
-      // JsonArray pinArray = top.createNestedArray("pin");
-      // pinArray.add(testPins[0]);
-      // pinArray.add(testPins[1]); 
+      JsonArray pinArray = top.createNestedArray("pin");
+      pinArray.add(stripPins[0]);
+      pinArray.add(stripPins[1]); 
     }
 
 

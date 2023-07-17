@@ -451,6 +451,8 @@ Length: <input type="number" name="XC${i}" id="xc${i}" class="l" min="1" max="65
 		}
 
 		function addBtn(i,p,t) {
+          console.log('AddBtn');
+          console.log(i,p,t);
 			var c = gId("btns").innerHTML;
 			var bt = "BT" + String.fromCharCode((i<10?48:55)+i);
 			var be = "BE" + String.fromCharCode((i<10?48:55)+i);
@@ -468,6 +470,7 @@ Length: <input type="number" name="XC${i}" id="xc${i}" class="l" min="1" max="65
 			c += `<span style="cursor: pointer;" onclick="off('${bt}')">&nbsp;&#x2715;</span><br>`;
 			gId("btns").innerHTML = c;
 		}
+
 		function tglSi(cs) {
 			customStarts = cs;
 			if (!customStarts) startsDirty = []; //set all starts to clean

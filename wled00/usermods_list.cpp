@@ -364,7 +364,7 @@ void registerUsermods()
   usermods.add(new ShtUsermod());
   #endif
 
-  #ifdef USERMOD_VEHICLE_INDICATORS
-  usermods.add(new MySignalLightUsermod());
+  #ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
+  usermods.add(new CurrentVehicleIndicatorUserMod());
   #endif
 }

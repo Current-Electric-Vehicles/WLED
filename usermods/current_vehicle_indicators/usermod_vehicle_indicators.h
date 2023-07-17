@@ -23,11 +23,10 @@
 char* _name = "Current Vehicle Indicators";
 
 //class name. Use something descriptive and leave the ": public Usermod" part :)
-class MyVehicleIndicatorUserMod : public Usermod {
+class CurrentVehicleIndicatorUserMod : public Usermod {
 
   private:
       bool enabled = true;
-
 
 
   public:

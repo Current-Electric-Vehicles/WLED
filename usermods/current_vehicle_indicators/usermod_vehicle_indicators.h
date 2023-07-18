@@ -2,6 +2,9 @@
 
 #include "wled.h"
 
+#include<map>
+#include <vector>
+
 /*
  * Usermods allow you to add own functionality to WLED more easily
  * See: https://github.com/Aircoookie/WLED/wiki/Add-own-functionality
@@ -27,9 +30,20 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
   private:
       bool enabled = true;
+      unsigned long lastTime = 0;
+      typedef std::map<string, int> Map;
+      std::map <int, string> portMappings = {
+        { 16, "Keep-Alive Pin" },
+        { 17, "User Input 2" },
+        { 5, "User Input 3" },
+        { 18, "User Input 4" },
+        { 19, "User Input 7" },
+        { 21, "User Input 8" },
+        { 22, "User Input 5" },
+        { 23, "User Input 6" },
+      }
 
-      int8_t stripPins[2];
-
+      // int8_t stripPins[2];
 
 
   public:
@@ -72,6 +86,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     void setup() {
       // do your set-up here
       Serial.println("Hello from my usermod!");
+      pinMode(17, INPUT);
     }
 
 
@@ -98,6 +113,40 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       // if usermod is disabled or called during strip updating just exit
       // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
       //Serial.println("Hello from my usermod!");
+      // do your magic here
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+      //
+
+
+      for (auto iter = cbegin(portMappings); iter != cend(portMappings); ++iter) {
+          bool pinVal = digitalRead(iter);
+          Serial.print("Pin: ");
+          Serial.print(second);
+          Serial.print(", GPIO: ");
+          Serial.println(iter);
+          Serial.print(" Value: ");
+          Serial.println(pinVal);
+          if(pinVal == 1) {
+            Serial.print("Applying Preset: ");
+            Serial.println(second);
+            //applyPreset(gpio);
+          }
+        }
+        Serial.println(" ");
+      }
     }
 
 
@@ -133,8 +182,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
      */
     void addToJsonState(JsonObject& root)
     {
-      // if (!initDone || !enabled) return;  // prevent crash on boot applyPreset()
-
+      // if (!initDone || !enabled) return;  // prevent crash on boot applyPreset(
       // JsonObject usermod = root[FPSTR(_name)];
       // if (usermod.isNull()) usermod = root.createNestedObject(FPSTR(_name));
 
@@ -207,9 +255,9 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       // top["testULong"] = testULong;
       top["testFloat"] = 420.69;
       top["testString"] = "string goes here";
-      JsonArray pinArray = top.createNestedArray("pin");
-      pinArray.add(stripPins[0]);
-      pinArray.add(stripPins[1]); 
+      // JsonArray pinArray = top.createNestedArray("pin");
+      // pinArray.add(stripPins[0]);
+      // pinArray.add(stripPins[1]); 
     }
 
 
@@ -285,10 +333,21 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
      * handleButton() can be used to override default button behaviour. Returning true
      * will prevent button working in a default way.
      * Replicating button.cpp
-     */
     bool handleButton(uint8_t b) {
       yield();
-      return true;
+      // ignore certain button types as they may have other consequences
+      if (!enabled
+       || buttonType[b] == BTN_TYPE_NONE
+       || buttonType[b] == BTN_TYPE_RESERVED
+       || buttonType[b] == BTN_TYPE_PIR_SENSOR
+       || buttonType[b] == BTN_TYPE_ANALOG
+       || buttonType[b] == BTN_TYPE_ANALOG_INVERTED) {
+        return false;
+      }
+      //Serial.println("ouch!");
+      //Serial.println(b);
+      //Serial.println("");
+      //Serial.println(buttonType[b]);
     }
-};
+    **/
 

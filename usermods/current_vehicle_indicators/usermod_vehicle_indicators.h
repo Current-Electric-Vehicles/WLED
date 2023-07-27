@@ -1,76 +1,124 @@
 #pragma once
 
-#include "wled.h"
-
-/*
- * Usermods allow you to add own functionality to WLED more easily
- * See: https://github.com/Aircoookie/WLED/wiki/Add-own-functionality
- * 
- * This is an example for a v2 usermod.
- * v2 usermods are class inheritance based and can (but don't have to) implement more functions, each of them is shown in this example.
- * Multiple v2 usermods can be added to one compilation easily.
- * 
- * Creating a usermod:
- * This file serves as an example. If you want to create a usermod, it is recommended to use usermod_v2_empty.h from the usermods folder as a template.
- * Please remember to rename the class and file to a descriptive name.
- * You may also use multiple .h and .cpp files.
- * 
- * Using a usermod:
- * 1. Copy the usermod into the sketch folder (same folder as wled00.ino)
- * 2. Register the usermod by adding #include "usermod_filename.h" in the top and registerUsermod(new MyUsermodClass()) in the bottom of usermods_list.cpp
- */
+#include "wled.h"p
 
 char* _name = "Current Vehicle Indicators";
 
-//class name. Use something descriptive and leave the ": public Usermod" part :)
+typedef struct PinState {
+  bool drive = false; 
+  bool backup = false;
+  bool brake = false;
+  bool leftBlinker = false;
+  bool rightBlinker = false;
+};
+
 class CurrentVehicleIndicatorUserMod : public Usermod {
 
   private:
-      bool enabled = true;
 
+    bool enabled = true;
+
+    // states available here: https://docs.google.com/document/d/1xnQHJQ36Hoe6f8d2YZyPMUZjU54ghxtrWkC_2V9NMOE/edit#heading=h.xf94nigg76ec
+    PinState state;
+
+    int drivePin = -1; 
+    int backupPin = -1;
+    int brakePin = -1;
+    int leftBlinkerPin = -1;
+    int rightBlinkerPin = -1;
+
+
+    void setupPins() {
+      Serial.println("Setting up pins for CurrentVehicleIndicatorUserMod");
+      if (this->drivePin != -1) {
+        Serial.print("Drive pin: "); Serial.println(this->drivePin);
+        pinMode(this->drivePin, INPUT);
+      }
+      if (this->backupPin != -1) {
+        Serial.print("Backup pin: "); Serial.println(this->backupPin);
+        pinMode(this->backupPin, INPUT);
+      }
+      if (this->brakePin != -1) {
+        Serial.print("Braje pin: "); Serial.println(this->brakePin);
+        pinMode(this->brakePin, INPUT);
+      }
+      if (this->leftBlinkerPin != -1) {
+        Serial.print("Left blinker pin: "); Serial.println(this->leftBlinkerPin);
+        pinMode(this->leftBlinkerPin, INPUT);
+      }
+      if (this->rightBlinkerPin != -1) {
+        Serial.print("Right blinker pin: "); Serial.println(this->rightBlinkerPin);
+        pinMode(this->rightBlinkerPin, INPUT);
+      }
+    }
+
+    PinState readState() {
+      PinState ret;
+      ret.drive = this->drivePin != -1 ? digitalRead(this->drivePin) : false;
+      ret.backup = this->backupPin != -1 ? digitalRead(this->backupPin) : false;
+      ret.brake = this->brakePin != -1 ? digitalRead(this->brakePin) : false;
+      ret.leftBlinker = this->leftBlinkerPin != -1 ? digitalRead(this->leftBlinkerPin) : false;
+      ret.rightBlinker = this->rightBlinkerPin != -1 ? digitalRead(this->rightBlinkerPin) : false;
+      return ret;
+    }
 
   public:
 
-    // non WLED related methods, may be used for data exchange between usermods (non-inline methods should be defined out of class)
-
-    /**
-     * Enable/Disable the usermod
-     */
     inline void enable(bool enable) { enabled = enable; }
 
-    /**
-     * Get usermod enabled/disabled state
-     */
     inline bool isEnabled() { return true; }
 
-    // in such case add the following to another usermod:
-    //  in private vars:
-    //   #ifdef USERMOD_EXAMPLE
-    //   MyExampleUsermod* UM;
-    //   #endif
-    //  in setup()
-    //   #ifdef USERMOD_EXAMPLE
-    //   UM = (MyExampleUsermod*) usermods.lookup(USERMOD_ID_EXAMPLE);
-    //   #endif
-    //  somewhere in loop() or other member method
-    //   #ifdef USERMOD_EXAMPLE
-    //   if (UM != nullptr) isExampleEnabled = UM->isEnabled();
-    //   if (!isExampleEnabled) UM->enable(true);
-    //   #endif
-
-
-    // methods called by WLED (can be inlined as they are called only once but if you call them explicitly define them out of class)
-
-    /*
-     * setup() is called once at boot. WiFi is not yet connected at this point.
-     * readFromConfig() is called prior to setup()
-     * You can use it to initialize variables, sensors or similar.
-     */
     void setup() {
-      // do your set-up here
-      Serial.println("Hello from my usermod!");
+      setupPins();
     }
 
+    void loop() {
+
+      PinState newState = this->readState();
+      bool driveChanged = newState.drive != this->state.drive;
+      bool backupChanged = newState.backup != this->state.backup;
+      bool brakeChanged = newState.brake != this->state.brake;
+      bool leftBlinkerChanged = newState.leftBlinker != this->state.leftBlinker;
+      bool rightBlinkerChanged = newState.rightBlinker != this->state.rightBlinker;
+
+      bool changed = driveChanged || backupChanged || brakeChanged || leftBlinkerChanged || rightBlinkerChanged;
+      if (!changed) {
+        return;
+      }
+
+      this->state = newState;
+
+      if (driveChanged && this->state.drive) {
+        // turn on drive lights
+      } else if (driveChanged && !this->state.drive) {
+        // turn off drive lights
+      }
+
+      if (backupChanged && this->state.backup) {
+        // turn on backup lights
+      } else if (backupChanged && !this->state.backup) {
+        // turn off backup lights
+      }
+
+      if (brakeChanged && this->state.brake) {
+        // turn on brake lights
+      } else if (brakeChanged && !this->state.brake) {
+        // turn off brake lights
+      }
+
+      if (leftBlinkerChanged && this->state.leftBlinker) {
+        // turn on left blinker lights
+      } else if (leftBlinkerChanged && !this->state.leftBlinker) {
+        // turn off left blinker lights
+      }
+
+      if (rightBlinkerChanged && this->state.rightBlinker) {
+        // turn on right blinker lights
+      } else if (rightBlinkerChanged && !this->state.rightBlinker) {
+        // turn off right blinker lights
+      }
+
+    }
 
     /*
      * connected() is called every time the WiFi is (re)connected
@@ -79,24 +127,6 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     void connected() {
       Serial.println("Connected to WiFi!");
     }
-
-
-    /*
-     * loop() is called continuously. Here you can check for events, read sensors, etc.
-     * 
-     * Tips:
-     * 1. You can use "if (WLED_CONNECTED)" to check for a successful network connection.
-     *    Additionally, "if (WLED_MQTT_CONNECTED)" is available to check for a connection to an MQTT broker.
-     * 
-     * 2. Try to avoid using the delay() function. NEVER use delays longer than 10 milliseconds.
-     *    Instead, use a timer check as shown here.
-     */
-    void loop() {
-      // if usermod is disabled or called during strip updating just exit
-      // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
-      //Serial.println("Hello from my usermod!");
-    }
-
 
     /*
      * addToJsonInfo() can be used to add custom entries to the /json/info part of the JSON API.

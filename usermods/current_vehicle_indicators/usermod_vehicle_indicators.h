@@ -134,6 +134,31 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
         Serial.print("rightBlinker: "); Serial.println(this->state.rightBlinker);
       }
 
+      // rear driver outer
+
+      // rear driver inner
+
+      // rear driver panel
+
+
+      // rear passenger outer
+
+      // rear passenger inner
+
+      // rear passenger panel
+
+
+      // front driver grill
+
+      // front driver panel
+
+
+      // front passenger grill
+
+      // front passenger panel
+
+
+
       if (driveChanged && this->state.drive) {
         // turn on drive lights
       } else if (driveChanged && !this->state.drive) {

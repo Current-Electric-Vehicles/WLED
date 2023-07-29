@@ -82,14 +82,15 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     void appendPinConfig(const char* pinField, const char* onField) {
       oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', '")); oappend(SET_F(pinField)); oappend(SET_F("');"));
-      oappend(SET_F("addOption(dd,'Input 1', 27);"));
-      oappend(SET_F("addOption(dd,'Input 2', 28);"));
-      oappend(SET_F("addOption(dd,'Input 3', 29);"));
-      oappend(SET_F("addOption(dd,'Input 4', 30);"));
-      oappend(SET_F("addOption(dd,'Input 5', 36);"));
-      oappend(SET_F("addOption(dd,'Input 6', 37);"));
-      oappend(SET_F("addOption(dd,'Input 7', 31);"));
-      oappend(SET_F("addOption(dd,'Input 8', 33);"));
+      oappend(SET_F("addOption(dd,'Unused', -1);"));
+      oappend(SET_F("addOption(dd,'Input 1', 16);"));
+      oappend(SET_F("addOption(dd,'Input 2', 17);"));
+      oappend(SET_F("addOption(dd,'Input 3', 5);"));
+      oappend(SET_F("addOption(dd,'Input 4', 18);"));
+      oappend(SET_F("addOption(dd,'Input 5', 39);"));
+      oappend(SET_F("addOption(dd,'Input 6', 36);"));
+      oappend(SET_F("addOption(dd,'Input 7', 35);"));
+      oappend(SET_F("addOption(dd,'Input 8', 34);"));
       
       oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', '")); oappend(SET_F(onField)); oappend(SET_F("');"));
       oappend(SET_F("addOption(dd,'HIGH', 1);"));

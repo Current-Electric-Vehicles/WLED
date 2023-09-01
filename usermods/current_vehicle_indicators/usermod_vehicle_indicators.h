@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Arduino.h>
-#include "wled.h"
+#include <TMP1075.h>
 
-const char* _name = "CurrentVehicleIndicators";
+#include "wled.h"
 
 struct PinState {
   bool drive = false; 
@@ -14,26 +14,27 @@ struct PinState {
   bool ignition = false;
   bool accessory = false;
   bool aux1 = false;
+  float monitorCurrent = 0.0f;
 };
 
-#define LED_POWER1_ENABLE_PIN     GPIO_NUM_25
+#define LED_POWER1_ENABLE_PIN     GPIO_NUM_22
 #define LED_MONITOR_SEL1          GPIO_NUM_2
-#define LED_PSU1_ENABLE_PIN       GPIO_NUM_22
+#define LED_PSU1_ENABLE_PIN       GPIO_NUM_25
 
-#define LED_POWER2_ENABLE_PIN     GPIO_NUM_27
+#define LED_POWER2_ENABLE_PIN     GPIO_NUM_23
 #define LED_MONITOR_SEL2          GPIO_NUM_0
-#define LED_PSU2_ENABLE_PIN       GPIO_NUM_23
+#define LED_PSU2_ENABLE_PIN       GPIO_NUM_27
 
-#define LED_POWER_DIAG_PIN        GPIO_NUM_4
+#define LED_POWER_DIAG_PIN        GPIO_NUM_36
 
-#define USER_PIN_1 16
-#define USER_PIN_2 17
-#define USER_PIN_3 5
-#define USER_PIN_4 18
-#define USER_PIN_5 39
-#define USER_PIN_6 36
-#define USER_PIN_7 35
-#define USER_PIN_8 34
+#define USER_PIN_1 GPIO_NUM_14
+#define USER_PIN_2 GPIO_NUM_17
+#define USER_PIN_3 GPIO_NUM_5
+#define USER_PIN_4 GPIO_NUM_18
+#define USER_PIN_5 GPIO_NUM_39
+#define USER_PIN_6 GPIO_NUM_4
+#define USER_PIN_7 GPIO_NUM_35
+#define USER_PIN_8 GPIO_NUM_34
 
 #define DRIVE_PIN_DEFAULT       USER_PIN_1
 #define BACKUP_PIN_DEFAULT      USER_PIN_2
@@ -44,15 +45,39 @@ struct PinState {
 #define ACCESSORY_PIN_DEFAULT   USER_PIN_7
 #define AUX1_PIN_DEFAULT        USER_PIN_8
 
+#define I2C_SDA GPIO_NUM_14
+#define I2C_SCL GPIO_NUM_26
+#define I2C_FREQUENCY 100000
+#define TEMP_SENSOR_I2C_ADDR 0b1001000
+
+#define ADC_RESOLUTION (3.3f / 4096.0f)
+#define ADC_SCALE_FACTOR 2.0f
+
+#define CHATTER_FREQUENCY 10000
+
+#define OVERHEATED_TEMP_CELCIUS 80.0
+
 class CurrentVehicleIndicatorUserMod : public Usermod {
 
+  public:
+    CurrentVehicleIndicatorUserMod() :
+      wire(0),
+      tmp1075(wire, TEMP_SENSOR_I2C_ADDR) {}
+
   private:
+    TwoWire wire;
+    TMP1075::TMP1075 tmp1075;
 
     bool enabled = true;
+    float temp = 0.0f;
+    bool overhated = false;
+    int chatterGuard = 0;
 
     // states available here: https://docs.google.com/document/d/1xnQHJQ36Hoe6f8d2YZyPMUZjU54ghxtrWkC_2V9NMOE/edit#heading=h.xf94nigg76ec
     PinState state;
 
+    bool psu1Enable = false;
+    bool psu2Enable = false;
     bool ledPower1Enable = false;
     bool ledPower2Enable = false;
     int diagnosticMode = -1;
@@ -77,6 +102,33 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     void setupPins() {
       Serial.println("Setting up pins for CurrentVehicleIndicatorUserMod");
+
+      pinMode(LED_MONITOR_SEL1, OUTPUT);
+      pinMode(LED_MONITOR_SEL2, OUTPUT);
+      pinMode(LED_PSU1_ENABLE_PIN, OUTPUT);
+      pinMode(LED_PSU2_ENABLE_PIN, OUTPUT);
+      pinMode(LED_POWER1_ENABLE_PIN, OUTPUT);
+      pinMode(LED_POWER2_ENABLE_PIN, OUTPUT);
+    
+      switch (this->diagnosticMode) {
+        case 100:
+          digitalWrite(LED_MONITOR_SEL1, LOW);
+          digitalWrite(LED_MONITOR_SEL2, LOW);
+          break;
+        case 200:
+          digitalWrite(LED_MONITOR_SEL1, LOW);
+          digitalWrite(LED_MONITOR_SEL2, HIGH);
+          break;
+        case 300:
+          digitalWrite(LED_MONITOR_SEL1, HIGH);
+          digitalWrite(LED_MONITOR_SEL2, LOW);
+          break;
+        default: // -1
+          digitalWrite(LED_MONITOR_SEL1, HIGH);
+          digitalWrite(LED_MONITOR_SEL2, HIGH);
+          break;
+      }
+
       if (this->drivePin != -1) {
         Serial.print("Drive pin: "); Serial.print(this->drivePin, 10); Serial.print(" on: "); Serial.println(this->driveOn == HIGH ? "HIGH" : "LOW");
         pinMode(this->drivePin, INPUT);
@@ -109,65 +161,32 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
         Serial.print("AUX1 pin: "); Serial.print(this->aux1Pin, 10); Serial.print(" on: "); Serial.println(this->aux1On == HIGH ? "HIGH" : "LOW");
         pinMode(this->aux1Pin, INPUT);
       }
-      
-      // pinMode(LED_POWER_DIAG_PIN, INPUT);
-      pinMode(LED_MONITOR_SEL1, OUTPUT);
-      pinMode(LED_MONITOR_SEL2, OUTPUT);
-      switch (this->diagnosticMode) {
-        case 100:
-          digitalWrite(LED_MONITOR_SEL1, LOW);
-          digitalWrite(LED_MONITOR_SEL2, LOW);
-          break;
-        case 200:
-          digitalWrite(LED_MONITOR_SEL1, LOW);
-          digitalWrite(LED_MONITOR_SEL2, HIGH);
-          break;
-        case 300:
-          digitalWrite(LED_MONITOR_SEL1, HIGH);
-          digitalWrite(LED_MONITOR_SEL2, LOW);
-          break;
-        default: // -1
-          digitalWrite(LED_MONITOR_SEL1, HIGH);
-          digitalWrite(LED_MONITOR_SEL2, HIGH);
-          break;
-      }
+    }
 
-      pinMode(LED_PSU1_ENABLE_PIN, OUTPUT);
-      pinMode(LED_PSU2_ENABLE_PIN, OUTPUT);
-      digitalWrite(LED_PSU1_ENABLE_PIN, LOW);
-      digitalWrite(LED_PSU2_ENABLE_PIN, LOW);
+    void updateLightPowerSettings() {
+        this->setPUS1Enabled(this->psu1Enable && !this->overhated);
+        this->setPUS2Enabled(this->psu2Enable && !this->overhated);
+        this->setLED1PowerEnabled(this->ledPower1Enable && !this->overhated);
+        this->setLED2PowerEnabled(this->ledPower2Enable && !this->overhated);
+    }
 
-      pinMode(LED_POWER1_ENABLE_PIN, OUTPUT);
-      pinMode(LED_POWER2_ENABLE_PIN, OUTPUT);
-      digitalWrite(LED_POWER1_ENABLE_PIN, this->ledPower1Enable ? HIGH : LOW);
-      digitalWrite(LED_POWER2_ENABLE_PIN, this->ledPower2Enable ? HIGH : LOW);
+    void setPUS1Enabled(bool enabled) {
+      digitalWrite(LED_PSU1_ENABLE_PIN, enabled ? HIGH : LOW);
+    }
+
+    void setPUS2Enabled(bool enabled) {
+      digitalWrite(LED_PSU2_ENABLE_PIN, enabled ? HIGH : LOW);
+    }
+
+    void setLED1PowerEnabled(bool enabled) {
+      digitalWrite(LED_POWER1_ENABLE_PIN, enabled ? HIGH : LOW);
+    }
+
+    void setLED2PowerEnabled(bool enabled) {
+      digitalWrite(LED_POWER2_ENABLE_PIN, enabled ? HIGH : LOW);
     }
 
     PinState readState() {
-
-      static int rockLobster = 1;
-
-      if (++rockLobster % 20000 == 0) {
-        Serial.println("========== io:");
-        Serial.print("digitalRead(this->drivePin): "); Serial.println(digitalRead(this->drivePin));
-        Serial.print("digitalRead(this->backupPin): "); Serial.println(digitalRead(this->backupPin));
-        Serial.print("digitalRead(this->brakePin): "); Serial.println(digitalRead(this->brakePin));
-        Serial.print("digitalRead(this->leftBlinkerPin): "); Serial.println(digitalRead(this->leftBlinkerPin));
-        Serial.print("digitalRead(this->rightBlinkerPin): "); Serial.println(digitalRead(this->rightBlinkerPin));
-        Serial.print("digitalRead(this->ledPower1Enable): "); Serial.println(digitalRead(this->ledPower1Enable));
-        Serial.print("digitalRead(this->ledPower2Enable): "); Serial.println(digitalRead(this->ledPower2Enable));
-        Serial.print("digitalRead(this->ignitionPin): "); Serial.println(digitalRead(this->ignitionPin));
-        Serial.print("digitalRead(this->accessoryPin): "); Serial.println(digitalRead(this->accessoryPin));
-        Serial.print("digitalRead(this->aux1Pin): "); Serial.println(digitalRead(this->aux1Pin));
-        Serial.print("digitalRead(this->diagnosticMode): "); Serial.println(this->diagnosticMode);
-        Serial.print("digitalRead(LED_POWER1_ENABLE_PIN): "); Serial.println(digitalRead(LED_POWER1_ENABLE_PIN));
-        Serial.print("digitalRead(LED_POWER2_ENABLE_PIN): "); Serial.println(digitalRead(LED_POWER2_ENABLE_PIN));
-        Serial.print("digitalRead(LED_PSU1_ENABLE_PIN): "); Serial.println(digitalRead(LED_PSU1_ENABLE_PIN));
-        Serial.print("digitalRead(LED_PSU2_ENABLE_PIN): "); Serial.println(digitalRead(LED_PSU2_ENABLE_PIN));
-        Serial.print("digitalRead(LED_MONITOR_SEL1): "); Serial.println(digitalRead(LED_MONITOR_SEL1));
-        Serial.print("digitalRead(LED_MONITOR_SEL2): "); Serial.println(digitalRead(LED_MONITOR_SEL2));
-        Serial.print("analogRead(LED_POWER_DIAG_PIN): "); Serial.println(analogRead(LED_POWER_DIAG_PIN));
-      }
 
       PinState ret;
       ret.drive = this->drivePin != -1 ? digitalRead(this->drivePin) == this->driveOn : false;
@@ -178,30 +197,63 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       ret.ignition = this->ignitionPin != -1 ? digitalRead(this->ignitionPin) == this->ignitionOn : false;
       ret.accessory = this->accessoryPin != -1 ? digitalRead(this->accessoryPin) == this->accessoryOn : false;
       ret.aux1 = this->aux1Pin != -1 ? digitalRead(this->aux1Pin) == this->aux1On : false;
+
+      if (this->diagnosticMode != -1) {
+        analogReadResolution(12);
+        ret.monitorCurrent = (ADC_RESOLUTION * (float)analogRead(LED_POWER_DIAG_PIN)) * ADC_SCALE_FACTOR;
+        ret.monitorCurrent *= 2.0f;
+      } else {
+        ret.monitorCurrent = 0.0f;
+      }
+
+      if (this->canChatter()) {
+        Serial.println("========== io:");
+        Serial.print("getTemperatureCelsius(): "); Serial.println(this->temp);
+        Serial.print("digitalRead(this->drivePin): "); Serial.println(digitalRead(this->drivePin));
+        Serial.print("digitalRead(this->backupPin): "); Serial.println(digitalRead(this->backupPin));
+        Serial.print("digitalRead(this->brakePin): "); Serial.println(digitalRead(this->brakePin));
+        Serial.print("digitalRead(this->leftBlinkerPin): "); Serial.println(digitalRead(this->leftBlinkerPin));
+        Serial.print("digitalRead(this->rightBlinkerPin): "); Serial.println(digitalRead(this->rightBlinkerPin));
+        Serial.print("digitalRead(this->ignitionPin): "); Serial.println(digitalRead(this->ignitionPin));
+        Serial.print("digitalRead(this->accessoryPin): "); Serial.println(digitalRead(this->accessoryPin));
+        Serial.print("digitalRead(this->aux1Pin): "); Serial.println(digitalRead(this->aux1Pin));
+        Serial.print("digitalRead(LED_POWER1_ENABLE_PIN): "); Serial.println(digitalRead(LED_POWER1_ENABLE_PIN));
+        Serial.print("digitalRead(LED_POWER2_ENABLE_PIN): "); Serial.println(digitalRead(LED_POWER2_ENABLE_PIN));
+        Serial.print("digitalRead(LED_PSU1_ENABLE_PIN): "); Serial.println(digitalRead(LED_PSU1_ENABLE_PIN));
+        Serial.print("digitalRead(LED_PSU2_ENABLE_PIN): "); Serial.println(digitalRead(LED_PSU2_ENABLE_PIN));
+        Serial.print("digitalRead(LED_MONITOR_SEL1): "); Serial.println(digitalRead(LED_MONITOR_SEL1));
+        Serial.print("digitalRead(LED_MONITOR_SEL2): "); Serial.println(digitalRead(LED_MONITOR_SEL2));
+        Serial.print("analogRead(LED_POWER_DIAG_PIN): "); Serial.println(analogRead(LED_POWER_DIAG_PIN));
+        Serial.print("digitalRead(this->diagnosticMode): "); Serial.println(this->diagnosticMode);
+        Serial.print("digitalRead(this->ledPower1Enable): "); Serial.println(this->ledPower1Enable);
+        Serial.print("digitalRead(this->ledPower2Enable): "); Serial.println(this->ledPower2Enable);
+        Serial.print("digitalRead(this->psu1Enable): "); Serial.println(this->psu1Enable);
+        Serial.print("digitalRead(this->psu2Enable): "); Serial.println(this->psu2Enable);
+        Serial.print("monitorCurrent: "); Serial.println(ret.monitorCurrent);
+      }
+
       return ret;
     }
 
-    void appendPinConfig(const char* pinField, const char* onField) {
-      oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', '")); oappend(SET_F(pinField)); oappend(SET_F("');"));
-      oappend(SET_F("addInputOptions(dd);"));
-
-      oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', '")); oappend(SET_F(onField)); oappend(SET_F("');"));
-      oappend(SET_F("addHighLowOptions(dd);"));
+    bool isOverHeated() {
+      return this->temp >= OVERHEATED_TEMP_CELCIUS;
+    }
+    
+    bool canChatter() {
+      return (chatterGuard % CHATTER_FREQUENCY) == 0;
     }
 
-  public:
-
-    void loop() {
-      if (!this->enabled) {
-        return;
-      }
+    /**
+     * This method is where the logic goes for changing the lights
+     * based on inputs and other events.
+     */
+    void handleStateChanges() {
 
       PinState newState = this->readState();
 
       bool isSomethingOn = newState.drive || newState.backup || newState.brake || newState.leftBlinker || newState.rightBlinker || newState.ignition || newState.accessory || newState.aux1;
       if (isSomethingOn) {
-        digitalWrite(LED_PSU1_ENABLE_PIN, HIGH);
-        digitalWrite(LED_PSU2_ENABLE_PIN, HIGH);
+        this->updateLightPowerSettings();
       }
 
       bool driveChanged = newState.drive != this->state.drive;
@@ -329,20 +381,61 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       }
     }
 
+  public:
+
+    void loop() {
+
+      // get the temperature
+      chatterGuard++;
+      tmp1075.setConversionTime(TMP1075::ConversionTime220ms);
+      this->temp = this->tmp1075.getTemperatureCelsius();
+
+      if (this->isOverHeated()) {
+        // handle overheating
+        if (this->canChatter()) {
+          Serial.print("WARNING!!! System is overheated, disabling power to lights: ");
+          Serial.print(this->temp); Serial.println(" celcius");
+        }
+        this->overhated = true;
+        this->updateLightPowerSettings();
+        return;
+
+      } else if (!this->isOverHeated() && this->overhated) {
+        // handle coming out of overheating
+        Serial.print("No longer overheated, enabling power to lights: ");
+        Serial.print(this->temp); Serial.println(" celcius");
+        this->overhated = false;
+        this->updateLightPowerSettings();
+      }
+
+      if (!this->enabled) {
+        return;
+      }
+
+      this->handleStateChanges();
+    }
+
+    void connected() {
+      Serial.println("CurrentVehicleIndicators connected!");
+    }
+
     void enable(bool enable) {
       this->enabled = enable;
       setupPins();
+      this->updateLightPowerSettings();
     }
 
     void setup() {
       if (!this->enabled) {
         return;
       }
-      setupPins();
+      if (!wire.begin(I2C_SDA, I2C_SCL)) {
+        Serial.println("wire.begin(I2C_SDA, I2C_SCL) failed!");
+      }
     }
 
     void addToConfig(JsonObject& root) {
-      JsonObject top = root.createNestedObject(FPSTR(_name));
+      JsonObject top = root.createNestedObject(FPSTR("CurrentVehicleIndicators"));
       top.clear();
 
       top[FPSTR("enabled")] = enabled;
@@ -366,11 +459,13 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
       top[F("ledPower1Enable")] = this->ledPower1Enable;
       top[F("ledPower2Enable")] = this->ledPower2Enable;
+      top[F("psu1Enable")] = this->psu1Enable;
+      top[F("psu2Enable")] = this->psu2Enable;
       top[F("diagnosticMode")] = this->diagnosticMode;
     }
 
     bool readFromConfig(JsonObject& root) {
-      JsonObject top = root[FPSTR(_name)];
+      JsonObject top = root[FPSTR("CurrentVehicleIndicators")];
       getJsonValue(top[FPSTR("enabled")], this->enabled, false);
       getJsonValue(top[F("drivePin")], this->drivePin, DRIVE_PIN_DEFAULT);
       getJsonValue(top[F("backupPin")], this->backupPin, BACKUP_PIN_DEFAULT);
@@ -392,6 +487,8 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
       getJsonValue(top[F("ledPower1Enable")], this->ledPower1Enable, false);
       getJsonValue(top[F("ledPower2Enable")], this->ledPower2Enable, false);
+      getJsonValue(top[F("psu1Enable")], this->psu1Enable, false);
+      getJsonValue(top[F("psu2Enable")], this->psu2Enable, false);
 
       getJsonValue(top[F("diagnosticMode")], this->diagnosticMode, -1);
 
@@ -414,49 +511,51 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       this->aux1On = (int)this->aux1On;
 
       this->enable(this->enabled);
-      this->setupPins();
 
       return true;
     }
 
     void appendConfigData() {
-      oappend(SET_F("function addInputOptions(input) {"));
-      oappend(SET_F("  addOption(input, 'Unused', -1);"));
-      oappend(SET_F("  addOption(input, 'Input 1', ")); oappendi(USER_PIN_1); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 2', ")); oappendi(USER_PIN_2); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 3', ")); oappendi(USER_PIN_3); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 4', ")); oappendi(USER_PIN_4); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 5', ")); oappendi(USER_PIN_5); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 6', ")); oappendi(USER_PIN_6); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 7', ")); oappendi(USER_PIN_7); oappend(SET_F(");"));
-      oappend(SET_F("  addOption(input, 'Input 8', ")); oappendi(USER_PIN_8); oappend(SET_F(");"));
+      oappend(SET_F("function addPinConfig(p,o){"));
+      oappend(SET_F("i=addDropdown('CurrentVehicleIndicators',p);"));
+      oappend(SET_F("addOption(i,'Unused',-1);"));
+      oappend(SET_F("addOption(i,'Input 1',")); oappendi(USER_PIN_1); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 2',")); oappendi(USER_PIN_2); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 3',")); oappendi(USER_PIN_3); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 4',")); oappendi(USER_PIN_4); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 5',")); oappendi(USER_PIN_5); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 6',")); oappendi(USER_PIN_6); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 7',")); oappendi(USER_PIN_7); oappend(SET_F(");"));
+      oappend(SET_F("addOption(i,'Input 8',")); oappendi(USER_PIN_8); oappend(SET_F(");"));
+      oappend(SET_F("i=addDropdown('CurrentVehicleIndicators',o);"));
+      oappend(SET_F("addOption(i,'HIGH',1);"));
+      oappend(SET_F("addOption(i,'LOW',0);"));
       oappend(SET_F("}"));
-      oappend(SET_F("function addHighLowOptions(input) {"));
-      oappend(SET_F("  addOption(input,'HIGH', 1);"));
-      oappend(SET_F("  addOption(input,'LOW', 0);"));
+      oappend(SET_F("function addBooleanConfig(n){"));
+      oappend(SET_F("i=addDropdown('CurrentVehicleIndicators',n);"));
+      oappend(SET_F("addOption(i,'on',true);"));
+      oappend(SET_F("addOption(i,'off',false);"));
       oappend(SET_F("}"));
 
-      this->appendPinConfig("drivePin", "driveOn");
-      this->appendPinConfig("backupPin", "backupOn");
-      this->appendPinConfig("brakePin", "brakeOn");
-      this->appendPinConfig("leftBlinkerPin", "leftBlinkerOn");
-      this->appendPinConfig("rightBlinkerPin", "rightBlinkerOn");
-      this->appendPinConfig("ignitionPin", "ignitionOn");
-      this->appendPinConfig("accessoryPin", "accessoryOn");
-      this->appendPinConfig("aux1Pin", "aux1On");
+      oappend(SET_F("addPinConfig('drivePin','driveOn');"));
+      oappend(SET_F("addPinConfig('backupPin','backupOn');"));
+      oappend(SET_F("addPinConfig('brakePin','brakeOn');"));
+      oappend(SET_F("addPinConfig('leftBlinkerPin','leftBlinkerOn');"));
+      oappend(SET_F("addPinConfig('rightBlinkerPin','rightBlinkerOn');"));
+      oappend(SET_F("addPinConfig('ignitionPin','ignitionOn');"));
+      oappend(SET_F("addPinConfig('accessoryPin','accessoryOn');"));
+      oappend(SET_F("addPinConfig('aux1Pin','aux1On');"));
 
-      oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', 'ledPower1Enable');"));
-      oappend(SET_F("addOption(dd,'on', true);"));
-      oappend(SET_F("addOption(dd,'off', false);"));
+      oappend(SET_F("addBooleanConfig('ledPower1Enable');"));
+      oappend(SET_F("addBooleanConfig('ledPower2Enable');"));
 
-      oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', 'ledPower2Enable');"));
-      oappend(SET_F("addOption(dd,'on', true);"));
-      oappend(SET_F("addOption(dd,'off', false);"));
+      oappend(SET_F("addBooleanConfig('psu1Enable');"));
+      oappend(SET_F("addBooleanConfig('psu2Enable');"));
 
-      oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("', 'diagnosticMode');"));
-      oappend(SET_F("addOption(dd, 'none', -1);"));
-      oappend(SET_F("addOption(dd, 'LED1 Current', 100);"));
-      oappend(SET_F("addOption(dd, 'LED2 Current', 200);"));
-      oappend(SET_F("addOption(dd, 'Temp', 300);"));
+      oappend(SET_F("dd=addDropdown('CurrentVehicleIndicators','diagnosticMode');"));
+      oappend(SET_F("addOption(dd,'none',-1);"));
+      oappend(SET_F("addOption(dd,'LED1 Current',100);"));
+      oappend(SET_F("addOption(dd,'LED2 Current',200);"));
+      oappend(SET_F("addOption(dd,'Temp',300);"));
     }
 };

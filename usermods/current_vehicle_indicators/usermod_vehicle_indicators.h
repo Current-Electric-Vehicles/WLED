@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <TMP1075.h>
 
+#include <CAN.h>
+
 #include "wled.h"
 
 struct PinState {
@@ -21,18 +23,19 @@ struct PinState {
 #define LED_MONITOR_SEL1          GPIO_NUM_2
 #define LED_PSU1_ENABLE_PIN       GPIO_NUM_25
 
+#define CAN_TERMINATION_SWITCH    GPIO_NUM_15
 #define LED_POWER2_ENABLE_PIN     GPIO_NUM_23
 #define LED_MONITOR_SEL2          GPIO_NUM_0
 #define LED_PSU2_ENABLE_PIN       GPIO_NUM_27
 
 #define LED_POWER_DIAG_PIN        GPIO_NUM_36
 
-#define USER_PIN_1 GPIO_NUM_14
+#define USER_PIN_1 GPIO_NUM_16
 #define USER_PIN_2 GPIO_NUM_17
-#define USER_PIN_3 GPIO_NUM_5
+#define USER_PIN_3 GPIO_NUM_12
 #define USER_PIN_4 GPIO_NUM_18
 #define USER_PIN_5 GPIO_NUM_39
-#define USER_PIN_6 GPIO_NUM_4
+#define USER_PIN_6 GPIO_NUM_13
 #define USER_PIN_7 GPIO_NUM_35
 #define USER_PIN_8 GPIO_NUM_34
 
@@ -53,7 +56,7 @@ struct PinState {
 #define ADC_RESOLUTION (3.3f / 4096.0f)
 #define ADC_SCALE_FACTOR 2.0f
 
-#define CHATTER_FREQUENCY 10000
+#define CHATTER_FREQUENCY 2000
 
 #define OVERHEATED_TEMP_CELCIUS 80.0
 
@@ -80,6 +83,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     bool psu2Enable = false;
     bool ledPower1Enable = false;
     bool ledPower2Enable = false;
+    bool canTerminated = false;
     int diagnosticMode = -1;
 
     int drivePin        = DRIVE_PIN_DEFAULT; 
@@ -103,12 +107,19 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     void setupPins() {
       Serial.println("Setting up pins for CurrentVehicleIndicatorUserMod");
 
+      // TODO: remove on next board revision
+      pinMode(GPIO_NUM_13, INPUT);
+      pinMode(GPIO_NUM_14, INPUT);
+
+      pinMode(CAN_TERMINATION_SWITCH, OUTPUT);
       pinMode(LED_MONITOR_SEL1, OUTPUT);
       pinMode(LED_MONITOR_SEL2, OUTPUT);
       pinMode(LED_PSU1_ENABLE_PIN, OUTPUT);
       pinMode(LED_PSU2_ENABLE_PIN, OUTPUT);
       pinMode(LED_POWER1_ENABLE_PIN, OUTPUT);
       pinMode(LED_POWER2_ENABLE_PIN, OUTPUT);
+
+      digitalWrite(CAN_TERMINATION_SWITCH, this->canTerminated ? HIGH : LOW);
     
       switch (this->diagnosticMode) {
         case 100:
@@ -209,6 +220,8 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       if (this->canChatter()) {
         Serial.println("========== io:");
         Serial.print("getTemperatureCelsius(): "); Serial.println(this->temp);
+        Serial.print("canTerminated: "); Serial.println(this->canTerminated);
+        Serial.print("digitalRead(CAN_TERMINATION_SWITCH): "); Serial.println(digitalRead(CAN_TERMINATION_SWITCH));
         Serial.print("digitalRead(this->drivePin): "); Serial.println(digitalRead(this->drivePin));
         Serial.print("digitalRead(this->backupPin): "); Serial.println(digitalRead(this->backupPin));
         Serial.print("digitalRead(this->brakePin): "); Serial.println(digitalRead(this->brakePin));
@@ -385,6 +398,9 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     void loop() {
 
+      this->readCanMessages();
+      this->emitCanMessage(8, 0xBEEF, false);
+
       // get the temperature
       chatterGuard++;
       tmp1075.setConversionTime(TMP1075::ConversionTime220ms);
@@ -426,6 +442,12 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     }
 
     void setup() {
+
+      if (!CAN.begin(1000E3)) {
+        Serial.println("can.begin() failed!");
+      } else {
+        Serial.println("can.begin() success!");
+      }
       if (!this->enabled) {
         return;
       }
@@ -462,6 +484,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       top[F("psu1Enable")] = this->psu1Enable;
       top[F("psu2Enable")] = this->psu2Enable;
       top[F("diagnosticMode")] = this->diagnosticMode;
+      top[F("canTerminated")] = this->canTerminated;
     }
 
     bool readFromConfig(JsonObject& root) {
@@ -491,6 +514,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       getJsonValue(top[F("psu2Enable")], this->psu2Enable, false);
 
       getJsonValue(top[F("diagnosticMode")], this->diagnosticMode, -1);
+      getJsonValue(top[F("canTerminated")], this->canTerminated, false);
 
       this->drivePin = (int)this->drivePin;
       this->backupPin = (int)this->backupPin;
@@ -552,10 +576,57 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       oappend(SET_F("addBooleanConfig('psu1Enable');"));
       oappend(SET_F("addBooleanConfig('psu2Enable');"));
 
+      oappend(SET_F("addBooleanConfig('canTerminated');"));
+
       oappend(SET_F("dd=addDropdown('CurrentVehicleIndicators','diagnosticMode');"));
       oappend(SET_F("addOption(dd,'none',-1);"));
       oappend(SET_F("addOption(dd,'LED1 Current',100);"));
       oappend(SET_F("addOption(dd,'LED2 Current',200);"));
       oappend(SET_F("addOption(dd,'Temp',300);"));
     }
+
+    /**
+     * Read CAN messages
+     */
+    void readCanMessages() {
+        int packetSize = CAN.parsePacket();
+        if (packetSize == 0) {
+            return;
+        }
+
+        long id = CAN.packetId();
+
+        int packet[packetSize];
+        for (int i = 0; i < packetSize; i++) {
+            packet[i] = CAN.read();
+        }
+
+        Serial.print("IN " ); Serial.print(id, HEX);
+        for (int i = 0; i < packetSize; i++) {
+            if (i == 0) {
+                Serial.print(":");
+            } else {
+                Serial.print(",");
+            }
+            Serial.print(" " ); Serial.print(packet[i], HEX);
+        }
+        Serial.println("");
+    }
+
+    /**
+     * Emits a can message
+     */
+    void emitCanMessage(uint8_t length, long id, bool extended) {
+        if (extended) {
+            CAN.beginExtendedPacket(id, length);
+        } else {
+            CAN.beginPacket((int)id, length);
+        }
+
+        for (int i = 1; i < length; i++) {
+            CAN.write((uint8_t)random(255));
+        }
+        CAN.endPacket();
+    }
+
 };

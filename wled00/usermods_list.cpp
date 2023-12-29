@@ -215,7 +215,7 @@ void registerUsermods()
    * \/ \/ \/
    */
   //usermods.add(new MyExampleUsermod());
-  #ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
+  #ifdef CURRENT_EV_C111
   usermods.add(new CurrentVehicleIndicatorUserMod());
   #endif
   

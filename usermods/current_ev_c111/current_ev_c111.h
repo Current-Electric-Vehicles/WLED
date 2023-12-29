@@ -58,6 +58,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     bool psu1Enable = false;
     bool psu2Enable = false;
+    bool differentialDataEnabled = false;
     bool canTerminated = false;
 
     int drivePin        = DRIVE_PIN_DEFAULT; 
@@ -81,6 +82,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     void setupPins() {
       Serial.println("Setting up pins for CurrentVehicleIndicatorUserMod");
       
+      c111.setDifferentialDataEnabled(this->differentialDataEnabled);
       c111.setCanTerminated(this->canTerminated);
     }
 
@@ -120,6 +122,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
         Serial.print("C111_SENSOR_PSU1_CURRENT: "); Serial.println(ret.psu1Current);
         Serial.print("C111_SENSOR_PSU2_CURRENT: "); Serial.println(ret.psu2Current);
         Serial.print("c111.getTemperatureCelcius(): "); Serial.println(c111.getTemperatureCelcius());
+        Serial.print("c111.isDifferentialDataEnabled()"); Serial.println(c111.isDifferentialDataEnabled());
       }
 
       return ret;
@@ -342,6 +345,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
       top[F("psu1Enable")] = this->psu1Enable;
       top[F("psu2Enable")] = this->psu2Enable;
+      top[F("differentialDataEnabled")] = this->differentialDataEnabled;
       top[F("canTerminated")] = this->canTerminated;
     }
 
@@ -368,7 +372,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
       getJsonValue(top[F("psu1Enable")], this->psu1Enable, false);
       getJsonValue(top[F("psu2Enable")], this->psu2Enable, false);
-
+      getJsonValue(top[F("differentialDataEnabled")], this->differentialDataEnabled, false);
       getJsonValue(top[F("canTerminated")], this->canTerminated, false);
 
       this->drivePin = (int)this->drivePin;
@@ -427,7 +431,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
       oappend(SET_F("addBooleanConfig('psu1Enable');"));
       oappend(SET_F("addBooleanConfig('psu2Enable');"));
-
       oappend(SET_F("addBooleanConfig('canTerminated');"));
+      oappend(SET_F("addBooleanConfig('differentialDataEnabled');"));
     }
 };

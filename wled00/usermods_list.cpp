@@ -11,6 +11,12 @@
  */
 //#include "../usermods/EXAMPLE_v2/usermod_v2_example.h"
 
+//#include "../usermods/EXAMPLE_V2/usermod_v2_empty.h"
+
+#ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
+  #include "../usermods/current_vehicle_indicators/usermod_vehicle_indicators.h"
+#endif
+
 #ifdef USERMOD_BATTERY
   #include "../usermods/Battery/usermod_v2_Battery.h"
 #endif
@@ -209,6 +215,10 @@ void registerUsermods()
    * \/ \/ \/
    */
   //usermods.add(new MyExampleUsermod());
+  #ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
+  usermods.add(new CurrentVehicleIndicatorUserMod());
+  #endif
+  
   #ifdef USERMOD_BATTERY
   usermods.add(new UsermodBattery());
   #endif

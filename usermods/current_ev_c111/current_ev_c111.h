@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <TMP1075.h>
-
-#include <CAN.h>
+#include <LED_Controller.h>
 
 #include "wled.h"
 
@@ -16,28 +14,18 @@ struct PinState {
   bool ignition = false;
   bool accessory = false;
   bool aux1 = false;
-  float monitorCurrent = 0.0f;
+  float psu1Current = 0.0f;
+  float psu2Current = 0.0f;
 };
 
-#define LED_POWER1_ENABLE_PIN     GPIO_NUM_22
-#define LED_MONITOR_SEL1          GPIO_NUM_2
-#define LED_PSU1_ENABLE_PIN       GPIO_NUM_25
-
-#define CAN_TERMINATION_SWITCH    GPIO_NUM_15
-#define LED_POWER2_ENABLE_PIN     GPIO_NUM_23
-#define LED_MONITOR_SEL2          GPIO_NUM_0
-#define LED_PSU2_ENABLE_PIN       GPIO_NUM_27
-
-#define LED_POWER_DIAG_PIN        GPIO_NUM_36
-
-#define USER_PIN_1 GPIO_NUM_16
-#define USER_PIN_2 GPIO_NUM_17
-#define USER_PIN_3 GPIO_NUM_12
-#define USER_PIN_4 GPIO_NUM_18
-#define USER_PIN_5 GPIO_NUM_39
-#define USER_PIN_6 GPIO_NUM_13
-#define USER_PIN_7 GPIO_NUM_35
-#define USER_PIN_8 GPIO_NUM_34
+#define USER_PIN_1 C111_USER_INPUT_1
+#define USER_PIN_2 C111_USER_INPUT_2
+#define USER_PIN_3 C111_USER_INPUT_3
+#define USER_PIN_4 C111_USER_INPUT_4
+#define USER_PIN_5 C111_USER_INPUT_5
+#define USER_PIN_6 C111_USER_INPUT_6
+#define USER_PIN_7 C111_USER_INPUT_7
+#define USER_PIN_8 C111_USER_INPUT_8
 
 #define DRIVE_PIN_DEFAULT       USER_PIN_1
 #define BACKUP_PIN_DEFAULT      USER_PIN_2
@@ -48,14 +36,6 @@ struct PinState {
 #define ACCESSORY_PIN_DEFAULT   USER_PIN_7
 #define AUX1_PIN_DEFAULT        USER_PIN_8
 
-#define I2C_SDA GPIO_NUM_14
-#define I2C_SCL GPIO_NUM_26
-#define I2C_FREQUENCY 100000
-#define TEMP_SENSOR_I2C_ADDR 0b1001000
-
-#define ADC_RESOLUTION (3.3f / 4096.0f)
-#define ADC_SCALE_FACTOR 2.0f
-
 #define CHATTER_FREQUENCY 2000
 
 #define OVERHEATED_TEMP_CELCIUS 80.0
@@ -64,16 +44,13 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
   public:
     CurrentVehicleIndicatorUserMod() :
-      wire(0),
-      tmp1075(wire, TEMP_SENSOR_I2C_ADDR) {}
+      c111() {}
 
   private:
-    TwoWire wire;
-    TMP1075::TMP1075 tmp1075;
+    LED_Controller c111;
 
     bool enabled = true;
-    float temp = 0.0f;
-    bool overhated = false;
+    bool overheated = false;
     int chatterGuard = 0;
 
     // states available here: https://docs.google.com/document/d/1xnQHJQ36Hoe6f8d2YZyPMUZjU54ghxtrWkC_2V9NMOE/edit#heading=h.xf94nigg76ec
@@ -81,10 +58,7 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     bool psu1Enable = false;
     bool psu2Enable = false;
-    bool ledPower1Enable = false;
-    bool ledPower2Enable = false;
     bool canTerminated = false;
-    int diagnosticMode = -1;
 
     int drivePin        = DRIVE_PIN_DEFAULT; 
     int backupPin       = BACKUP_PIN_DEFAULT;
@@ -106,150 +80,49 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     void setupPins() {
       Serial.println("Setting up pins for CurrentVehicleIndicatorUserMod");
-
-      // TODO: remove on next board revision
-      pinMode(GPIO_NUM_13, INPUT);
-      pinMode(GPIO_NUM_14, INPUT);
-
-      pinMode(CAN_TERMINATION_SWITCH, OUTPUT);
-      pinMode(LED_MONITOR_SEL1, OUTPUT);
-      pinMode(LED_MONITOR_SEL2, OUTPUT);
-      pinMode(LED_PSU1_ENABLE_PIN, OUTPUT);
-      pinMode(LED_PSU2_ENABLE_PIN, OUTPUT);
-      pinMode(LED_POWER1_ENABLE_PIN, OUTPUT);
-      pinMode(LED_POWER2_ENABLE_PIN, OUTPUT);
-
-      digitalWrite(CAN_TERMINATION_SWITCH, this->canTerminated ? HIGH : LOW);
-    
-      switch (this->diagnosticMode) {
-        case 100:
-          digitalWrite(LED_MONITOR_SEL1, LOW);
-          digitalWrite(LED_MONITOR_SEL2, LOW);
-          break;
-        case 200:
-          digitalWrite(LED_MONITOR_SEL1, LOW);
-          digitalWrite(LED_MONITOR_SEL2, HIGH);
-          break;
-        case 300:
-          digitalWrite(LED_MONITOR_SEL1, HIGH);
-          digitalWrite(LED_MONITOR_SEL2, LOW);
-          break;
-        default: // -1
-          digitalWrite(LED_MONITOR_SEL1, HIGH);
-          digitalWrite(LED_MONITOR_SEL2, HIGH);
-          break;
-      }
-
-      if (this->drivePin != -1) {
-        Serial.print("Drive pin: "); Serial.print(this->drivePin, 10); Serial.print(" on: "); Serial.println(this->driveOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->drivePin, INPUT);
-      }
-      if (this->backupPin != -1) {
-        Serial.print("Backup pin: "); Serial.print(this->backupPin, 10); Serial.print(" on: "); Serial.println(this->backupOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->backupPin, INPUT);
-      }
-      if (this->brakePin != -1) {
-        Serial.print("Brake pin: "); Serial.print(this->brakePin, 10); Serial.print(" on: "); Serial.println(this->brakeOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->brakePin, INPUT);
-      }
-      if (this->leftBlinkerPin != -1) {
-        Serial.print("Left blinker pin: "); Serial.print(this->leftBlinkerPin, 10); Serial.print(" on: "); Serial.println(this->leftBlinkerOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->leftBlinkerPin, INPUT);
-      }
-      if (this->rightBlinkerPin != -1) {
-        Serial.print("Right blinker pin: "); Serial.print(this->rightBlinkerPin, 10); Serial.print(" on: "); Serial.println(this->rightBlinkerOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->rightBlinkerPin, INPUT);
-      }
-      if (this->ignitionPin != -1) {
-        Serial.print("Ignition pin: "); Serial.print(this->ignitionPin, 10); Serial.print(" on: "); Serial.println(this->ignitionOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->ignitionPin, INPUT);
-      }
-      if (this->accessoryPin != -1) {
-        Serial.print("Accessory pin: "); Serial.print(this->accessoryPin, 10); Serial.print(" on: "); Serial.println(this->accessoryOn == HIGH ? "HIGH" : "LOW");
-        pinMode(this->accessoryPin, INPUT);
-      }
-      if (this->aux1Pin != -1) {
-        Serial.print("AUX1 pin: "); Serial.print(this->aux1Pin, 10); Serial.print(" on: "); Serial.println(this->aux1On == HIGH ? "HIGH" : "LOW");
-        pinMode(this->aux1Pin, INPUT);
-      }
+      
+      c111.setCanTerminated(this->canTerminated);
     }
 
     void updateLightPowerSettings() {
-        this->setPUS1Enabled(this->psu1Enable && !this->overhated);
-        this->setPUS2Enabled(this->psu2Enable && !this->overhated);
-        this->setLED1PowerEnabled(this->ledPower1Enable && !this->overhated);
-        this->setLED2PowerEnabled(this->ledPower2Enable && !this->overhated);
-    }
-
-    void setPUS1Enabled(bool enabled) {
-      digitalWrite(LED_PSU1_ENABLE_PIN, enabled ? HIGH : LOW);
-    }
-
-    void setPUS2Enabled(bool enabled) {
-      digitalWrite(LED_PSU2_ENABLE_PIN, enabled ? HIGH : LOW);
-    }
-
-    void setLED1PowerEnabled(bool enabled) {
-      digitalWrite(LED_POWER1_ENABLE_PIN, enabled ? HIGH : LOW);
-    }
-
-    void setLED2PowerEnabled(bool enabled) {
-      digitalWrite(LED_POWER2_ENABLE_PIN, enabled ? HIGH : LOW);
+      c111.enablePSU1(this->psu1Enable && !c111.isOverHeated());
+      c111.enablePSU2(this->psu2Enable && !c111.isOverHeated());
     }
 
     PinState readState() {
 
       PinState ret;
-      ret.drive = this->drivePin != -1 ? digitalRead(this->drivePin) == this->driveOn : false;
-      ret.backup = this->backupPin != -1 ? digitalRead(this->backupPin) == this->backupOn : false;
-      ret.brake = this->brakePin != -1 ? digitalRead(this->brakePin) == this->brakeOn : false;
-      ret.leftBlinker = this->leftBlinkerPin != -1 ? digitalRead(this->leftBlinkerPin) == this->leftBlinkerOn : false;
-      ret.rightBlinker = this->rightBlinkerPin != -1 ? digitalRead(this->rightBlinkerPin) == this->rightBlinkerOn : false;
-      ret.ignition = this->ignitionPin != -1 ? digitalRead(this->ignitionPin) == this->ignitionOn : false;
-      ret.accessory = this->accessoryPin != -1 ? digitalRead(this->accessoryPin) == this->accessoryOn : false;
-      ret.aux1 = this->aux1Pin != -1 ? digitalRead(this->aux1Pin) == this->aux1On : false;
+      ret.drive = this->drivePin != -1 ? c111.getUserInputState(this->drivePin) == this->driveOn : false;
+      ret.backup = this->backupPin != -1 ? c111.getUserInputState(this->backupPin) == this->backupOn : false;
+      ret.brake = this->brakePin != -1 ? c111.getUserInputState(this->brakePin) == this->brakeOn : false;
+      ret.leftBlinker = this->leftBlinkerPin != -1 ? c111.getUserInputState(this->leftBlinkerPin) == this->leftBlinkerOn : false;
+      ret.rightBlinker = this->rightBlinkerPin != -1 ? c111.getUserInputState(this->rightBlinkerPin) == this->rightBlinkerOn : false;
+      ret.ignition = this->ignitionPin != -1 ? c111.getUserInputState(this->ignitionPin) == this->ignitionOn : false;
+      ret.accessory = this->accessoryPin != -1 ? c111.getUserInputState(this->accessoryPin) == this->accessoryOn : false;
+      ret.aux1 = this->aux1Pin != -1 ? c111.getUserInputState(this->aux1Pin) == this->aux1On : false;
 
-      if (this->diagnosticMode != -1) {
-        analogReadResolution(12);
-        ret.monitorCurrent = (ADC_RESOLUTION * (float)analogRead(LED_POWER_DIAG_PIN)) * ADC_SCALE_FACTOR;
-        ret.monitorCurrent *= 2.0f;
-      } else {
-        ret.monitorCurrent = 0.0f;
-      }
+      ret.psu1Current = c111.getPSUCurrent(C111_SENSOR_PSU1_CURRENT);
+      ret.psu2Current = c111.getPSUCurrent(C111_SENSOR_PSU2_CURRENT);
 
       if (this->canChatter()) {
-        Serial.println("========== io:");
-        Serial.print("getTemperatureCelsius(): "); Serial.println(this->temp);
+        Serial.println("========== c111:");
         Serial.print("canTerminated: "); Serial.println(this->canTerminated);
-        Serial.print("digitalRead(CAN_TERMINATION_SWITCH): "); Serial.println(digitalRead(CAN_TERMINATION_SWITCH));
-        Serial.print("digitalRead(this->drivePin): "); Serial.println(digitalRead(this->drivePin));
-        Serial.print("digitalRead(this->backupPin): "); Serial.println(digitalRead(this->backupPin));
-        Serial.print("digitalRead(this->brakePin): "); Serial.println(digitalRead(this->brakePin));
-        Serial.print("digitalRead(this->leftBlinkerPin): "); Serial.println(digitalRead(this->leftBlinkerPin));
-        Serial.print("digitalRead(this->rightBlinkerPin): "); Serial.println(digitalRead(this->rightBlinkerPin));
-        Serial.print("digitalRead(this->ignitionPin): "); Serial.println(digitalRead(this->ignitionPin));
-        Serial.print("digitalRead(this->accessoryPin): "); Serial.println(digitalRead(this->accessoryPin));
-        Serial.print("digitalRead(this->aux1Pin): "); Serial.println(digitalRead(this->aux1Pin));
-        Serial.print("digitalRead(LED_POWER1_ENABLE_PIN): "); Serial.println(digitalRead(LED_POWER1_ENABLE_PIN));
-        Serial.print("digitalRead(LED_POWER2_ENABLE_PIN): "); Serial.println(digitalRead(LED_POWER2_ENABLE_PIN));
-        Serial.print("digitalRead(LED_PSU1_ENABLE_PIN): "); Serial.println(digitalRead(LED_PSU1_ENABLE_PIN));
-        Serial.print("digitalRead(LED_PSU2_ENABLE_PIN): "); Serial.println(digitalRead(LED_PSU2_ENABLE_PIN));
-        Serial.print("digitalRead(LED_MONITOR_SEL1): "); Serial.println(digitalRead(LED_MONITOR_SEL1));
-        Serial.print("digitalRead(LED_MONITOR_SEL2): "); Serial.println(digitalRead(LED_MONITOR_SEL2));
-        Serial.print("analogRead(LED_POWER_DIAG_PIN): "); Serial.println(analogRead(LED_POWER_DIAG_PIN));
-        Serial.print("digitalRead(this->diagnosticMode): "); Serial.println(this->diagnosticMode);
-        Serial.print("digitalRead(this->ledPower1Enable): "); Serial.println(this->ledPower1Enable);
-        Serial.print("digitalRead(this->ledPower2Enable): "); Serial.println(this->ledPower2Enable);
-        Serial.print("digitalRead(this->psu1Enable): "); Serial.println(this->psu1Enable);
-        Serial.print("digitalRead(this->psu2Enable): "); Serial.println(this->psu2Enable);
-        Serial.print("monitorCurrent: "); Serial.println(ret.monitorCurrent);
+        Serial.print("digitalRead(this->drivePin): "); Serial.println(c111.getUserInputState(this->drivePin));
+        Serial.print("digitalRead(this->backupPin): "); Serial.println(c111.getUserInputState(this->backupPin));
+        Serial.print("digitalRead(this->brakePin): "); Serial.println(c111.getUserInputState(this->brakePin));
+        Serial.print("digitalRead(this->leftBlinkerPin): "); Serial.println(c111.getUserInputState(this->leftBlinkerPin));
+        Serial.print("digitalRead(this->rightBlinkerPin): "); Serial.println(c111.getUserInputState(this->rightBlinkerPin));
+        Serial.print("digitalRead(this->ignitionPin): "); Serial.println(c111.getUserInputState(this->ignitionPin));
+        Serial.print("digitalRead(this->accessoryPin): "); Serial.println(c111.getUserInputState(this->accessoryPin));
+        Serial.print("digitalRead(this->aux1Pin): "); Serial.println(c111.getUserInputState(this->aux1Pin));
+        Serial.print("c111.isPSU1Enabled(): "); Serial.println(c111.isPSU1Enabled());
+        Serial.print("c111.isPSU2Enabled(): "); Serial.println(c111.isPSU2Enabled());
+        Serial.print("C111_SENSOR_PSU1_CURRENT: "); Serial.println(ret.psu1Current);
+        Serial.print("C111_SENSOR_PSU2_CURRENT: "); Serial.println(ret.psu2Current);
+        Serial.print("c111.getTemperatureCelcius(): "); Serial.println(c111.getTemperatureCelcius());
       }
 
       return ret;
-    }
-
-    bool isOverHeated() {
-      return this->temp >= OVERHEATED_TEMP_CELCIUS;
     }
     
     bool canChatter() {
@@ -398,29 +271,24 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
 
     void loop() {
 
-      this->readCanMessages();
-      this->emitCanMessage(8, 0xBEEF, false);
-
       // get the temperature
       chatterGuard++;
-      tmp1075.setConversionTime(TMP1075::ConversionTime220ms);
-      this->temp = this->tmp1075.getTemperatureCelsius();
 
-      if (this->isOverHeated()) {
+      if (c111.isOverHeated()) {
+        this->overheated = true;
         // handle overheating
         if (this->canChatter()) {
           Serial.print("WARNING!!! System is overheated, disabling power to lights: ");
-          Serial.print(this->temp); Serial.println(" celcius");
+          Serial.print(c111.getTemperatureCelcius()); Serial.println(" celcius");
         }
-        this->overhated = true;
         this->updateLightPowerSettings();
         return;
 
-      } else if (!this->isOverHeated() && this->overhated) {
+      } else if (!c111.isOverHeated() && this->overheated) {
+        this->overheated = false;
         // handle coming out of overheating
         Serial.print("No longer overheated, enabling power to lights: ");
-        Serial.print(this->temp); Serial.println(" celcius");
-        this->overhated = false;
+        Serial.print(c111.getTemperatureCelcius()); Serial.println(" celcius");
         this->updateLightPowerSettings();
       }
 
@@ -442,18 +310,11 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
     }
 
     void setup() {
-
-      if (!CAN.begin(1000E3)) {
-        Serial.println("can.begin() failed!");
-      } else {
-        Serial.println("can.begin() success!");
-      }
       if (!this->enabled) {
         return;
       }
-      if (!wire.begin(I2C_SDA, I2C_SCL)) {
-        Serial.println("wire.begin(I2C_SDA, I2C_SCL) failed!");
-      }
+      c111.initialize();
+      c111.setOverheatTempCelcius(OVERHEATED_TEMP_CELCIUS);
     }
 
     void addToConfig(JsonObject& root) {
@@ -479,11 +340,8 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       top[F("accessoryOn")] = this->accessoryOn;
       top[F("aux1On")] = this->aux1On;
 
-      top[F("ledPower1Enable")] = this->ledPower1Enable;
-      top[F("ledPower2Enable")] = this->ledPower2Enable;
       top[F("psu1Enable")] = this->psu1Enable;
       top[F("psu2Enable")] = this->psu2Enable;
-      top[F("diagnosticMode")] = this->diagnosticMode;
       top[F("canTerminated")] = this->canTerminated;
     }
 
@@ -508,12 +366,9 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       getJsonValue(top[F("accessoryOn")],     this->accessoryOn, 1);
       getJsonValue(top[F("aux1On")],          this->aux1On, 1);
 
-      getJsonValue(top[F("ledPower1Enable")], this->ledPower1Enable, false);
-      getJsonValue(top[F("ledPower2Enable")], this->ledPower2Enable, false);
       getJsonValue(top[F("psu1Enable")], this->psu1Enable, false);
       getJsonValue(top[F("psu2Enable")], this->psu2Enable, false);
 
-      getJsonValue(top[F("diagnosticMode")], this->diagnosticMode, -1);
       getJsonValue(top[F("canTerminated")], this->canTerminated, false);
 
       this->drivePin = (int)this->drivePin;
@@ -570,63 +425,9 @@ class CurrentVehicleIndicatorUserMod : public Usermod {
       oappend(SET_F("addPinConfig('accessoryPin','accessoryOn');"));
       oappend(SET_F("addPinConfig('aux1Pin','aux1On');"));
 
-      oappend(SET_F("addBooleanConfig('ledPower1Enable');"));
-      oappend(SET_F("addBooleanConfig('ledPower2Enable');"));
-
       oappend(SET_F("addBooleanConfig('psu1Enable');"));
       oappend(SET_F("addBooleanConfig('psu2Enable');"));
 
       oappend(SET_F("addBooleanConfig('canTerminated');"));
-
-      oappend(SET_F("dd=addDropdown('CurrentVehicleIndicators','diagnosticMode');"));
-      oappend(SET_F("addOption(dd,'none',-1);"));
-      oappend(SET_F("addOption(dd,'LED1 Current',100);"));
-      oappend(SET_F("addOption(dd,'LED2 Current',200);"));
-      oappend(SET_F("addOption(dd,'Temp',300);"));
     }
-
-    /**
-     * Read CAN messages
-     */
-    void readCanMessages() {
-        int packetSize = CAN.parsePacket();
-        if (packetSize == 0) {
-            return;
-        }
-
-        long id = CAN.packetId();
-
-        int packet[packetSize];
-        for (int i = 0; i < packetSize; i++) {
-            packet[i] = CAN.read();
-        }
-
-        Serial.print("IN " ); Serial.print(id, HEX);
-        for (int i = 0; i < packetSize; i++) {
-            if (i == 0) {
-                Serial.print(":");
-            } else {
-                Serial.print(",");
-            }
-            Serial.print(" " ); Serial.print(packet[i], HEX);
-        }
-        Serial.println("");
-    }
-
-    /**
-     * Emits a can message
-     */
-    void emitCanMessage(uint8_t length, long id, bool extended) {
-        if (extended) {
-            CAN.beginExtendedPacket(id, length);
-        } else {
-            CAN.beginPacket((int)id, length);
-        }
-
-        for (int i = 1; i < length; i++) {
-            CAN.write((uint8_t)random(255));
-        }
-        CAN.endPacket();
-    }
-
 };

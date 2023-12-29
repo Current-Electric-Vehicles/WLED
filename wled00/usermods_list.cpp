@@ -13,8 +13,8 @@
 
 //#include "../usermods/EXAMPLE_V2/usermod_v2_empty.h"
 
-#ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
-  #include "../usermods/current_vehicle_indicators/usermod_vehicle_indicators.h"
+#ifdef CURRENT_EV_C111
+  #include "../usermods/current_ev_c111/current_ev_c111.h"
 #endif
 
 #ifdef USERMOD_BATTERY

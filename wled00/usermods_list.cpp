@@ -139,6 +139,10 @@
   #include "../usermods/wizlights/wizlights.h"
 #endif
 
+#ifdef USERMOD_WIREGUARD
+  #include "../usermods/wireguard/wireguard.h"
+#endif
+
 #ifdef USERMOD_WORDCLOCK
   #include "../usermods/usermod_v2_word_clock/usermod_v2_word_clock.h"
 #endif
@@ -179,6 +183,10 @@
   #include "../usermods/boblight/boblight.h"
 #endif
 
+#ifdef USERMOD_INTERNAL_TEMPERATURE
+  #include "../usermods/Internal_Temperature_v2/usermod_internal_temperature.h"
+#endif
+
 #if defined(WLED_USE_SD_MMC) || defined(WLED_USE_SD_SPI)
 // This include of SD.h and SD_MMC.h must happen here, else they won't be
 // resolved correctly (when included in mod's header only)
@@ -195,6 +203,9 @@
 #include "../usermods/pwm_outputs/usermod_pwm_outputs.h"
 #endif
 
+#ifdef USERMOD_LDR_DUSK_DAWN
+#include "../usermods/LDR_Dusk_Dawn_v2/usermod_LDR_Dusk_Dawn_v2.h"
+#endif
 
 void registerUsermods()
 {
@@ -204,6 +215,10 @@ void registerUsermods()
    * \/ \/ \/
    */
   //usermods.add(new MyExampleUsermod());
+  #ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
+  usermods.add(new CurrentVehicleIndicatorUserMod());
+  #endif
+  
   #ifdef USERMOD_BATTERY
   usermods.add(new UsermodBattery());
   #endif
@@ -312,6 +327,10 @@ void registerUsermods()
   usermods.add(new WizLightsUsermod());
   #endif
 
+  #ifdef USERMOD_WIREGUARD
+  usermods.add(new WireguardUsermod());
+  #endif
+
   #ifdef USERMOD_WORDCLOCK
   usermods.add(new WordClockUsermod());
   #endif
@@ -364,7 +383,11 @@ void registerUsermods()
   usermods.add(new ShtUsermod());
   #endif
 
-  #ifdef USERMOD_CURRENT_VEHICLE_INDICATORS
-  usermods.add(new CurrentVehicleIndicatorUserMod());
+  #ifdef USERMOD_INTERNAL_TEMPERATURE
+  usermods.add(new InternalTemperatureUsermod());
+  #endif
+
+  #ifdef USERMOD_LDR_DUSK_DAWN
+  usermods.add(new LDR_Dusk_Dawn_v2());
   #endif
 }
